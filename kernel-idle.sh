@@ -120,6 +120,13 @@ else
     echo "kernel-idle: Startup Config [$CONFIG_SOURCE] -> AC[Disp:$((AC_DPMS / 60))m | Susp:$((AC_SUSPEND / 60))m] BAT[Disp:$((BAT_DPMS / 60))m | Susp:$((BAT_SUSPEND / 60))m] LOW[Disp:$((LOWBAT_DPMS / 60))m | Susp:$((LOWBAT_SUSPEND / 60))m] (User: $HUMAN_USER)"
 fi
 
+# Detect desktop chassis once at startup to handle UPS-backed desktops correctly
+CHASSIS_TYPE=$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)
+case "$CHASSIS_TYPE" in
+    3|4|5|6|7|15|16|17|23|24) IS_DESKTOP=1 ;;
+    *) IS_DESKTOP=0 ;;
+esac
+
 # --- DISPLAY HARDWARE CONTROL ---
 turn_off_display() {
     # 1. Save current Virtual Terminal (VT) and switch to isolated VT 8
@@ -238,8 +245,14 @@ while true; do
         # 2. Dynamic Power & Battery State Detection
         POWER_STATE=$(grep -h . /sys/class/power_supply/A*/online 2>/dev/null | head -n1)
         [ -z "$POWER_STATE" ] && POWER_STATE=$(grep -h . /sys/class/power_supply/*/online 2>/dev/null | head -n1)
+        HAS_BATTERY=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -n1)
 
-        if [ -z "$POWER_STATE" ] || [ "$POWER_STATE" = "0" ]; then
+        if [ "$IS_DESKTOP" -eq 1 ] && [ -z "$HAS_BATTERY" ]; then
+            # Desktop with no exposed battery (UPS managed via NUT or hidden) — always AC
+            DISPLAY_TIMEOUT=$AC_DPMS
+            SUSPEND_TIMEOUT=$AC_SUSPEND
+            CURRENT_PROFILE="AC"
+        elif [ -n "$HAS_BATTERY" ] && { [ -z "$POWER_STATE" ] || [ "$POWER_STATE" = "0" ]; }; then
             BAT_CAP=$(grep -h . /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -n 1)
             # Low Battery threshold enforced at 20%
             if [ -n "$BAT_CAP" ] && [ "$BAT_CAP" -le 20 ]; then
