@@ -23,7 +23,9 @@ SDDM does not natively honor system power settings when no user is logged in. Ex
 * **Profile Awareness:** Detects chassis type (desktop vs. laptop), battery presence, and AC/battery state, applying the correct timeout profile dynamically.
 * **Graceful Handoff:** Yields power management back to the desktop environment when a user logs in, and silently reclaims control after logout.
 
-**`kde-dpms.py`** — a minimal Wayland client that controls display power state directly via kwin's `org_kde_kwin_dpms_manager` Wayland protocol. This is the only reliable path for display blanking on modern KDE Wayland desktops — kscreen-doctor's `--dpms` flag targets a D-Bus interface that does not exist in the SDDM greeter session.
+**`kde-dpms.py`** — a minimal Wayland client that controls display power state via two KWin protocols:
+* **`org_kde_kwin_dpms_manager`** — sets DPMS mode (on/off). The only reliable blanking path on KDE Wayland; kscreen-doctor's `--dpms` flag targets a D-Bus interface that does not exist in the SDDM greeter session.
+* **`kde_output_management_v2`** — restores software brightness to 100% whenever the display is turned on. Monitors with `allowSdrSoftwareBrightness` enabled (e.g. those without DDC/CI or hardware backlight) have their brightness multiplier persisted to `kwinoutputconfig.json`. KWin saves a `brightness: 0` state when the display is powered off and does not restore it on DPMS on alone, causing SDDM to start permanently dim across reboots. Calling `set_brightness(10000)` + `apply` after every DPMS on causes KWin to persist `brightness: 1`, self-healing the config file over time.
 
 ### Why Not fbdev / VT Switching / DDC-CI?
 
@@ -34,6 +36,7 @@ On KMS-only systems (amdgpu, modern Intel/NVIDIA with KMS), several common blank
 | `/sys/class/graphics/fb*/blank` | No fbdev node on KMS-only drivers |
 | `chvt 8` | kwin_wayland retains DRM master regardless of VT switch |
 | `kscreen-doctor --dpms off` | Calls a D-Bus path that doesn't exist in the greeter session |
+| `kscreen-doctor output.X.brightness.Y` | Sets `sdrBrightness` (nits, HDR tone-mapping) — not the software brightness multiplier that causes the dim |
 | `ddcutil setvcp d6` | Blanks the monitor but DDC/CI fails immediately after; software wake is impossible |
 | `/sys/class/backlight/` | Empty on desktops with external monitors |
 
