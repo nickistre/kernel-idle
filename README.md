@@ -45,7 +45,7 @@ On KMS-only systems (amdgpu, modern Intel/NVIDIA with KMS), several common blank
 * **Compositor:** KWin Wayland (exposes `org_kde_kwin_dpms_manager`)
 * **Init system:** systemd (for `loginctl` session tracking and `systemctl suspend`)
 * **Python:** 3.6+ (stdlib only — no packages required)
-* **Tested on:** Bazzite (Fedora-based), CachyOS, Kubuntu 25.10
+* **Tested on:** Bazzite (Fedora-based)
 * **GPU:** Any KMS driver (amdgpu, i915, nouveau, nvidia-open)
 
 ### Tested configurations
@@ -53,8 +53,6 @@ On KMS-only systems (amdgpu, modern Intel/NVIDIA with KMS), several common blank
 | OS | GPU | Monitor | Connection | UPS |
 |---|---|---|---|---|
 | Bazzite (Fedora 43, kernel 6.17) | AMD Radeon RX 6800 XT (amdgpu) | Samsung Odyssey G95SC | DisplayPort | CyberPower CP1500PFCLCDa |
-| CachyOS (Arch Linux) | — | — | — | — |
-| Kubuntu 25.10 | — | — | — | — |
 
 ---
 
