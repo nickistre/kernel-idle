@@ -128,85 +128,33 @@ case "$CHASSIS_TYPE" in
 esac
 
 # --- DISPLAY HARDWARE CONTROL ---
+
+DPMS_SCRIPT="/usr/local/bin/kde-dpms.py"
+
+# Runs kde-dpms.py inside the active SDDM greeter's Wayland session.
+run_dpms() {
+    local sddm_uid runtime wayland_display
+    sddm_uid=$(id -u sddm 2>/dev/null) || return 1
+    runtime="/run/user/$sddm_uid"
+    [ -d "$runtime" ] || return 1
+    wayland_display=$(basename "$(ls -1 "$runtime"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -n1)" 2>/dev/null)
+    [ -n "$wayland_display" ] || return 1
+    runuser -u sddm -- env \
+        XDG_RUNTIME_DIR="$runtime" \
+        WAYLAND_DISPLAY="$wayland_display" \
+        python3 "$DPMS_SCRIPT" "$1" >/dev/null 2>&1
+}
+
 turn_off_display() {
-    # 1. Save current Virtual Terminal (VT) and switch to isolated VT 8
-    CURRENT_VT=$(cat /sys/class/tty/tty0/active 2>/dev/null | tr -dc '0-9')
-    [ -z "$CURRENT_VT" ] && CURRENT_VT=1
-
-    if [ "$CURRENT_VT" != "8" ]; then
-        echo "$CURRENT_VT" > "$STATE_DIR/saved_vt"
-        if chvt 8 2>/dev/null; then
-            sleep 0.1
-            printf "\033c\033[2J\033[?25l" > /dev/tty8 2>/dev/null
-            setterm -blank force -powersave powerdown -powerdown 0 < /dev/tty8 2>/dev/null
-        fi
+    if run_dpms off; then
+        echo "kernel-idle: Display off via org_kde_kwin_dpms."
+    else
+        echo "kernel-idle: WARNING - DPMS off failed; display may remain on."
     fi
-
-    # 2. Issue graceful VESA blanking (4 = Deep Powerdown, 1 = Normal Blank fallback)
-    for fb in /sys/class/graphics/fb*/blank; do
-        [ -e "$fb" ] && { echo 4 > "$fb" 2>/dev/null || echo 1 > "$fb" 2>/dev/null; }
-    done
-
-    # 3. Save current brightness and cut physical LED power
-    for bl in /sys/class/backlight/*; do
-        if [ -d "$bl" ]; then
-            CURRENT_B=$(cat "$bl/brightness" 2>/dev/null)
-            if [ -n "$CURRENT_B" ] && [ "$CURRENT_B" -gt 0 ]; then
-                echo "$CURRENT_B" > "$STATE_DIR/$(basename $bl)_saved_brightness"
-            fi
-            echo 0 > "$bl/brightness" 2>/dev/null
-        fi
-    done
 }
 
 turn_on_display() {
-    # 1. Restore LED backlight with compositor override protection
-    for bl in /sys/class/backlight/*; do
-        SAVED_FILE="$STATE_DIR/$(basename $bl)_saved_brightness"
-        if [ -f "$SAVED_FILE" ]; then
-            SAVED_B=$(cat "$SAVED_FILE")
-            MAX_B=$(cat "$bl/max_brightness" 2>/dev/null)
-
-            # Bounds checking to prevent kernel errors
-            if [ -n "$MAX_B" ] && [ "$SAVED_B" -gt "$MAX_B" ]; then
-                SAVED_B="$MAX_B"
-            fi
-
-            echo "$SAVED_B" > "$bl/brightness" 2>/dev/null
-
-            # Clear existing background enforcers
-            if [ -f "$STATE_DIR/override.pid" ]; then
-                kill -9 $(cat "$STATE_DIR/override.pid") 2>/dev/null || true
-            fi
-
-            # Background loop to enforce brightness state against KDE interventions
-            (
-                echo $BASHPID > "$STATE_DIR/override.pid"
-                for i in {1..3}; do
-                    sleep 1
-                    echo "$SAVED_B" > "$bl/brightness" 2>/dev/null || true
-                done
-                rm -f "$STATE_DIR/override.pid"
-            ) &
-        fi
-    done
-
-    # 2. Unblank VESA (0 = Normal Display)
-    for fb in /sys/class/graphics/fb*/blank; do
-        [ -e "$fb" ] && echo 0 > "$fb" 2>/dev/null
-    done
-
-    # 3. Restore original Virtual Terminal
-    if [ -f "$STATE_DIR/saved_vt" ]; then
-        TARGET_VT=$(cat "$STATE_DIR/saved_vt")
-        ACTIVE_VT=$(cat /sys/class/tty/tty0/active 2>/dev/null | tr -dc '0-9')
-        if [ -n "$TARGET_VT" ] && [ "$ACTIVE_VT" != "$TARGET_VT" ]; then
-            chvt "$TARGET_VT" 2>/dev/null
-        fi
-    fi
-
-    # 4. Restore cursor visibility
-    printf "\033[?25h" > /dev/tty8 2>/dev/null
+    run_dpms on || true
 }
 
 # --- LIFECYCLE MANAGEMENT ---
@@ -312,20 +260,8 @@ while true; do
                 echo "kernel-idle: Suspend idle timeout ($((SUSPEND_TIMEOUT / 60))m) reached. Preparing for suspend."
                 sync
 
-                # Pre-suspend environment restore to prevent Wayland crashes
-                if [ -f "$STATE_DIR/saved_vt" ]; then
-                    TARGET_VT=$(cat "$STATE_DIR/saved_vt")
-                    ACTIVE_VT=$(cat /sys/class/tty/tty0/active 2>/dev/null | tr -dc '0-9')
-                    [ -n "$TARGET_VT" ] && [ "$ACTIVE_VT" != "$TARGET_VT" ] && chvt "$TARGET_VT" 2>/dev/null
-                    sleep 0.5
-                fi
-
-                for bl in /sys/class/backlight/*; do
-                    SAVED_FILE="$STATE_DIR/$(basename $bl)_saved_brightness"
-                    if [ -f "$SAVED_FILE" ]; then
-                        cat "$SAVED_FILE" > "$bl/brightness" 2>/dev/null
-                    fi
-                done
+                # Restore display before suspend so the greeter is in a sane state on resume
+                turn_on_display
 
                 # Execute kernel suspend safely without wall messages
                 systemctl suspend --no-wall
