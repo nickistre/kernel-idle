@@ -223,6 +223,7 @@ while true; do
         # SCENARIO 1: Script took control due to user logoff (Physical Input Event)
         if [ "$JUST_TOOK_CONTROL" -eq 1 ]; then
             echo "kernel-idle: No active user session (SDDM). Took control with '$CURRENT_PROFILE' profile. Timer starting fresh at 0s -> Display: $((DISPLAY_TIMEOUT / 60))m, Suspend: $((SUSPEND_TIMEOUT / 60))m"
+            turn_on_display
             IDLE_TIME=0
             LAST_LOG_PROFILE="$CURRENT_PROFILE"
         fi

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 kde-dpms: Set display power state via org_kde_kwin_dpms Wayland protocol.
+When turning on, also restores software brightness via kde_output_management_v2.
 
 Must run as the Wayland session user (e.g. sddm), not as root.
 Usage: kde-dpms.py on|off|standby|suspend
@@ -8,6 +9,8 @@ Usage: kde-dpms.py on|off|standby|suspend
 import sys, socket, struct, os
 
 MODES = {'on': 0, 'standby': 1, 'suspend': 2, 'off': 3}
+
+BRIGHTNESS_ON = 10000   # 10000/10000 = 1.0 = full brightness
 
 
 def _pad4(n):
@@ -28,7 +31,7 @@ class Wl:
         path = display if display.startswith('/') else os.path.join(runtime, display)
         self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.s.connect(path)
-        self._nxt = 3   # 1=wl_display, 2=wl_registry, 3+ ours
+        self._nxt = 3
         self._buf = b''
 
     def _id(self):
@@ -36,7 +39,6 @@ class Wl:
 
     def _send(self, oid, op, payload=b''):
         sz = 8 + len(payload)
-        # Wire format: object_id u32, then (size << 16 | opcode) u32
         self.s.sendall(struct.pack('=IHH', oid, op, sz) + payload)
 
     def _read_exact(self, n):
@@ -97,7 +99,7 @@ class Wl:
 
 
 def _parse_globals(events):
-    """Extract {interface: global_name} from wl_registry.global events."""
+    """Extract {interface: [global_name, ...]} from wl_registry.global events."""
     result = {}
     for oid, op, data in events:
         if oid != 2 or op != 0 or len(data) < 8:
@@ -107,6 +109,30 @@ def _parse_globals(events):
         iface = data[8:8 + slen - 1].decode('utf-8', errors='replace') if slen > 0 else ''
         result.setdefault(iface, []).append(gname)
     return result
+
+
+def _restore_brightness(wl, globs):
+    """Set software brightness to full on all outputs via kde_output_management_v2.
+    Safe no-op on systems without this protocol or software brightness support."""
+    if 'kde_output_management_v2' not in globs or 'kde_output_device_v2' not in globs:
+        return
+    mgr = wl.bind(globs['kde_output_management_v2'][0], 'kde_output_management_v2', 12)
+    devices = [wl.bind(g, 'kde_output_device_v2', 12) for g in globs['kde_output_device_v2']]
+    wl.roundtrip()
+
+    # kde_output_management_v2.create_configuration → opcode 0
+    cfg = wl._id()
+    wl._send(mgr, 0, struct.pack('=I', cfg))
+    wl.roundtrip()
+
+    # kde_output_configuration_v2.set_brightness → opcode 20
+    # args: (uint: kde_output_device_v2 object id, uint: brightness 0-10000)
+    for dev in devices:
+        wl._send(cfg, 20, struct.pack('=II', dev, BRIGHTNESS_ON))
+
+    # kde_output_configuration_v2.apply → opcode 5
+    wl._send(cfg, 5)
+    wl.roundtrip()
 
 
 def main():
@@ -139,6 +165,10 @@ def main():
     for dpms in dpms_objs:
         wl.dpms_set(dpms, mode)
     wl.roundtrip()   # flush and wait for compositor to apply
+
+    # When turning on, also restore software brightness so kwin persists brightness: 1
+    if mode == MODES['on']:
+        _restore_brightness(wl, globs)
 
 
 if __name__ == '__main__':
