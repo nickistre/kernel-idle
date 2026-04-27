@@ -48,6 +48,14 @@ On KMS-only systems (amdgpu, modern Intel/NVIDIA with KMS), several common blank
 * **Tested on:** Bazzite (Fedora-based), CachyOS, Kubuntu 25.10
 * **GPU:** Any KMS driver (amdgpu, i915, nouveau, nvidia-open)
 
+### Tested configurations
+
+| OS | GPU | Monitor | Connection | UPS |
+|---|---|---|---|---|
+| Bazzite (Fedora 43, kernel 6.17) | AMD Radeon RX 6800 XT (amdgpu) | Samsung Odyssey G95SC | DisplayPort | CyberPower CP1500PFCLCDa |
+| CachyOS (Arch Linux) | — | — | — | — |
+| Kubuntu 25.10 | — | — | — | — |
+
 ---
 
 ## Installation
