@@ -127,19 +127,32 @@ case "$CHASSIS_TYPE" in
     *) IS_DESKTOP=0 ;;
 esac
 
+# Detect which greeter is installed: PLM (plasmalogin) or SDDM (sddm)
+detect_greeter_user() {
+    for u in plasmalogin sddm; do
+        if id -u "$u" >/dev/null 2>&1; then
+            echo "$u"; return 0
+        fi
+    done
+    return 1
+}
+GREETER_USER=$(detect_greeter_user) || {
+    echo "kernel-idle: ERROR - no known greeter user (plasmalogin/sddm) found"; exit 1; }
+echo "kernel-idle: Detected greeter user: $GREETER_USER"
+
 # --- DISPLAY HARDWARE CONTROL ---
 
 DPMS_SCRIPT="/usr/local/bin/kde-dpms.py"
 
-# Runs kde-dpms.py inside the active SDDM greeter's Wayland session.
+# Runs kde-dpms.py inside the active greeter's Wayland session (sddm or plasmalogin).
 run_dpms() {
-    local sddm_uid runtime wayland_display
-    sddm_uid=$(id -u sddm 2>/dev/null) || return 1
-    runtime="/run/user/$sddm_uid"
+    local greeter_uid runtime wayland_display
+    greeter_uid=$(id -u "$GREETER_USER" 2>/dev/null) || return 1
+    runtime="/run/user/$greeter_uid"
     [ -d "$runtime" ] || return 1
     wayland_display=$(basename "$(ls -1 "$runtime"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -n1)" 2>/dev/null)
     [ -n "$wayland_display" ] || return 1
-    runuser -u sddm -- env \
+    runuser -u "$GREETER_USER" -- env \
         XDG_RUNTIME_DIR="$runtime" \
         WAYLAND_DISPLAY="$wayland_display" \
         python3 "$DPMS_SCRIPT" "$1" >/dev/null 2>&1
@@ -222,7 +235,7 @@ while true; do
 
         # SCENARIO 1: Script took control due to user logoff (Physical Input Event)
         if [ "$JUST_TOOK_CONTROL" -eq 1 ]; then
-            echo "kernel-idle: No active user session (SDDM). Took control with '$CURRENT_PROFILE' profile. Timer starting fresh at 0s -> Display: $((DISPLAY_TIMEOUT / 60))m, Suspend: $((SUSPEND_TIMEOUT / 60))m"
+            echo "kernel-idle: No active user session ($GREETER_USER). Took control with '$CURRENT_PROFILE' profile. Timer starting fresh at 0s -> Display: $((DISPLAY_TIMEOUT / 60))m, Suspend: $((SUSPEND_TIMEOUT / 60))m"
             turn_on_display
             IDLE_TIME=0
             LAST_LOG_PROFILE="$CURRENT_PROFILE"

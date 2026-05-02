@@ -1,0 +1,12 @@
+[Unit]
+Description=Kernel Level Hardware Idle Monitor for SDDM/PLM greeter
+After=display-manager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/kernel-idle.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

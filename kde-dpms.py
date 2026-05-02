@@ -3,7 +3,7 @@
 kde-dpms: Set display power state via org_kde_kwin_dpms Wayland protocol.
 When turning on, also restores software brightness via kde_output_management_v2.
 
-Must run as the Wayland session user (e.g. sddm), not as root.
+Must run as the Wayland session user (e.g. sddm or plasmalogin), not as root.
 Usage: kde-dpms.py on|off|standby|suspend
 """
 import sys, socket, struct, os

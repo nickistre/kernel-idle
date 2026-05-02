@@ -1,10 +1,10 @@
-# kernel-idle: Advanced SDDM Power Management
+# kernel-idle: Advanced KDE Greeter Power Management
 
-A deterministic idle monitor that enforces display power-off and suspend policies on the SDDM login screen. It gracefully yields control to KDE Plasma once a user logs in, providing seamless power management across the full session lifecycle.
+A deterministic idle monitor that enforces display power-off and suspend policies at the KDE login screen (SDDM or Plasma Login Manager). It gracefully yields control to KDE Plasma once a user logs in, providing seamless power management across the full session lifecycle.
 
 ## Why This Exists
 
-SDDM does not natively honor system power settings when no user is logged in. Existing workarounds often fall short because they:
+The KDE login screen (SDDM / PLM) does not natively honor system power settings when no user is logged in. Existing workarounds often fall short because they:
 
 * Don't work correctly on Wayland — VT switching and fbdev blanking have no effect when kwin_wayland holds DRM master.
 * Cause black screens on resume from suspend.
@@ -44,18 +44,29 @@ On KMS-only systems (amdgpu, modern Intel/NVIDIA with KMS), several common blank
 
 ## Compatibility & Requirements
 
-* **Display Manager:** SDDM in Wayland mode (`plasmalogin` / `sddm` greeter user)
+* **Display Manager:** SDDM **or** Plasma Login Manager (PLM) — detected automatically at startup
 * **Compositor:** KWin Wayland (exposes `org_kde_kwin_dpms_manager`)
 * **Init system:** systemd (for `loginctl` session tracking and `systemctl suspend`)
 * **Python:** 3.6+ (stdlib only — no packages required)
 * **Tested on:** Bazzite (Fedora-based)
 * **GPU:** Any KMS driver (amdgpu, i915, nouveau, nvidia-open)
 
+### Greeter detection
+
+At startup `kernel-idle.sh` looks for the `plasmalogin` system user (PLM, Fedora 44+ / Bazzite 44+) and falls back to `sddm` (SDDM, Fedora ≤43 / Bazzite ≤43). The kwinoutputconfig file paths differ accordingly:
+
+| Greeter | kwinoutputconfig path |
+|---|---|
+| SDDM | `/var/lib/sddm/.config/kwinoutputconfig.json` |
+| PLM | `/var/lib/plasmalogin/.config/kwinoutputconfig.json` |
+
+Both use kwin_wayland as the greeter compositor, so the Wayland protocol approach is identical on both.
+
 ### Tested configurations
 
-| OS | GPU | Monitor | Connection | UPS |
-|---|---|---|---|---|
-| Bazzite (Fedora 43, kernel 6.17) | AMD Radeon RX 6800 XT (amdgpu) | Samsung Odyssey G95SC | DisplayPort | CyberPower CP1500PFCLCDa |
+| OS | DM | GPU | Monitor | Connection | UPS |
+|---|---|---|---|---|---|
+| Bazzite (Fedora 43, kernel 6.17) | SDDM | AMD Radeon RX 6800 XT (amdgpu) | Samsung Odyssey G95SC | DisplayPort | CyberPower CP1500PFCLCDa |
 
 ---
 
@@ -79,7 +90,7 @@ The service file:
 
 ```ini
 [Unit]
-Description=Kernel Level Hardware Idle Monitor for SDDM
+Description=Kernel Level Hardware Idle Monitor for SDDM/PLM greeter
 After=display-manager.service
 
 [Service]
@@ -114,11 +125,12 @@ The following shows config sync, display off/on cycles, user login/logout handof
 ```text
 17:05:23 kernel-idle.sh: Service initializing...
 17:05:23 kernel-idle.sh: Startup Config [KDE Plasma] -> AC[Disp:1m | Susp:2m] BAT[Disp:5m | Susp:5m] LOW[Disp:1m | Susp:5m] (User: nick)
-17:05:23 kernel-idle.sh: No active user session (SDDM). Took control with 'AC' profile. Timer starting fresh at 0s -> Display: 1m, Suspend: 2m
+17:05:23 kernel-idle.sh: Detected greeter user: sddm
+17:05:23 kernel-idle.sh: No active user session (sddm). Took control with 'AC' profile. Timer starting fresh at 0s -> Display: 1m, Suspend: 2m
 17:06:25 kernel-idle.sh: Display idle timeout (1m) reached. Turning off display.
 17:06:25 kernel-idle.sh: Display off via org_kde_kwin_dpms.
 17:07:26 kernel-idle.sh: Suspend idle timeout (2m) reached. Preparing for suspend.
 17:07:49 kernel-idle.sh: System resumed. Restoring display state.
 17:08:08 kernel-idle.sh: User 'nick' is logged in. Yielding power management to KDE.
-17:09:25 kernel-idle.sh: No active user session (SDDM). Took control with 'AC' profile. Timer starting fresh at 0s -> Display: 15m, Suspend: 240m
+17:09:25 kernel-idle.sh: No active user session (sddm). Took control with 'AC' profile. Timer starting fresh at 0s -> Display: 15m, Suspend: 240m
 ```
